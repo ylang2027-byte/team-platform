@@ -29,7 +29,6 @@ export default function Login() {
   return (
     <div className="auth">
       <div className="auth-card">
-        <div className="auth-logo">팀 플랫폼</div>
         <h1 className="auth-title">로그인</h1>
         <p className="auth-sub">팀 계정으로 로그인하세요</p>
 
