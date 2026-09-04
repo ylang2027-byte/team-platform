@@ -11,6 +11,7 @@ import {
   savePromoCoupons,
 } from '../lib/promos.js'
 import { fetchProducts, fetchListings } from '../lib/db.js'
+import { fetchProfiles } from '../lib/settings.js'
 import { notify } from '../lib/notifications.js'
 import { toast } from '../lib/toast.js'
 import { useSearchParams } from 'react-router-dom'
@@ -268,18 +269,21 @@ export default function Promos() {
   const [modal, setModal] = useState(null)
   const [applyModal, setApplyModal] = useState(null)
   const [statFilter, setStatFilter] = useState(null) // null | open | applied | running | pending
+  const [adminNames, setAdminNames] = useState([])
   const [params, setParams] = useSearchParams()
 
   const load = useCallback(async () => {
     try {
-      const [ps, prods, ls] = await Promise.all([
+      const [ps, prods, ls, profs] = await Promise.all([
         fetchPromos(),
         fetchProducts().catch(() => []),
         fetchListings().catch(() => []),
+        fetchProfiles().catch(() => []),
       ])
       setPromos(ps)
       setProducts(prods)
       setListings(ls)
+      setAdminNames(profs.filter((p) => p.role === 'admin' && p.name).map((p) => p.name))
       setError('')
     } catch (e) {
       setError(readErr(e))
@@ -505,6 +509,7 @@ export default function Promos() {
           listings={listings}
           me={me}
           isAdmin={isAdmin}
+          adminNames={adminNames}
           onSavedPromo={(patch) =>
             setPromos((ps) => ps.map((x) => (x.id === applyModal.id ? { ...x, ...patch } : x)))
           }
@@ -881,7 +886,7 @@ function CouponEditor({ coupons, setCoupons, otherPromos, onCopyFrom }) {
   )
 }
 
-function ApplyPriceModal({ promo, promos, products, listings, me, isAdmin, onSavedPromo, onClose }) {
+function ApplyPriceModal({ promo, promos, products, listings, me, isAdmin, adminNames = [], onSavedPromo, onClose }) {
   const byId = useMemo(() => new Map(products.map((p) => [p.id, p])), [products])
   const lbp = useMemo(() => {
     const m = new Map()
@@ -1025,16 +1030,23 @@ function ApplyPriceModal({ promo, promos, products, listings, me, isAdmin, onSav
     if (sb) patch.status = sb
     if (await save(patch, true)) {
       setStatus('pending')
-      if (promo.assignee && promo.assignee !== me) {
-        notify(promo.assignee, {
-          type: 'apply_request',
-          title: `신청가 승인 요청 · ${promo.title}`,
-          body: `${me || '누군가'}님이 승인을 요청했어요`,
-          link: `/promos?apply=${promo.id}`,
-        })
-        toast('승인 요청했어요 — 담당자에게 알림을 보냈습니다', 'ok')
+      // 담당자가 지정돼 있으면 담당자에게, 없으면 관리자 전원에게 알림 (본인 제외)
+      const hasAssignee = promo.assignee && promo.assignee !== me
+      const targets = hasAssignee
+        ? [promo.assignee]
+        : [...new Set(adminNames)].filter((n) => n && n !== me)
+      if (targets.length) {
+        targets.forEach((name) =>
+          notify(name, {
+            type: 'apply_request',
+            title: `신청가 승인 요청 · ${promo.title}`,
+            body: `${me || '누군가'}님이 승인을 요청했어요`,
+            link: `/promos?apply=${promo.id}`,
+          }),
+        )
+        toast(`승인 요청했어요 — ${hasAssignee ? '담당자' : '관리자'}에게 알림을 보냈습니다`, 'ok')
       } else {
-        toast('승인 요청했어요 (기획전 담당자가 없어 알림은 못 보냄)', 'warn')
+        toast('승인 요청했어요 (알림 받을 담당자·관리자가 없어요)', 'warn')
       }
       onClose()
     }
