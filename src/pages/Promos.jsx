@@ -270,7 +270,6 @@ export default function Promos() {
   const [applyModal, setApplyModal] = useState(null)
   const [statFilter, setStatFilter] = useState(null) // null | open | applied | running | pending
   const [adminNames, setAdminNames] = useState([])
-  const [teamNames, setTeamNames] = useState([])
   const [params, setParams] = useSearchParams()
 
   const load = useCallback(async () => {
@@ -285,7 +284,6 @@ export default function Promos() {
       setProducts(prods)
       setListings(ls)
       setAdminNames(profs.filter((p) => p.role === 'admin' && p.name).map((p) => p.name))
-      setTeamNames(profs.filter((p) => p.name).map((p) => p.name))
       setError('')
     } catch (e) {
       setError(readErr(e))
@@ -309,13 +307,6 @@ export default function Promos() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [promos])
 
-  const assignees = useMemo(
-    () =>
-      [
-        ...new Set([...teamNames, ...promos.map((p) => p.assignee).filter(Boolean)]),
-      ].sort(),
-    [promos, teamNames],
-  )
 
   const isOpen = (p) => OPEN_STATUS.has(p.status) || p.status === 'running'
 
@@ -437,7 +428,7 @@ export default function Promos() {
                 <th className="num">자료 마감</th>
                 <th className="num">진행 기간</th>
                 <th>할인 조건</th>
-                <th>담당자</th>
+                <th>등록자</th>
               </tr>
             </thead>
             <tbody>
@@ -477,7 +468,7 @@ export default function Promos() {
                         : '—'}
                     </td>
                     <td className="discount">{p.discount || '—'}</td>
-                    <td>{p.assignee || '—'}</td>
+                    <td>{p.created_by || '—'}</td>
                   </tr>
                 )
               })}
@@ -490,7 +481,6 @@ export default function Promos() {
         <PromoModal
           key={modal.promo?.id || 'new'}
           modal={modal}
-          assignees={assignees}
           onSave={save}
           onDelete={remove}
           onApply={
@@ -525,7 +515,7 @@ export default function Promos() {
   )
 }
 
-function PromoModal({ modal, assignees, onSave, onDelete, onApply, onClose }) {
+function PromoModal({ modal, onSave, onDelete, onApply, onClose }) {
   const isNew = modal.mode === 'new'
   const p = modal.promo
   const [channel, setChannel] = useState(p?.channel || '무신사')
@@ -535,7 +525,6 @@ function PromoModal({ modal, assignees, onSave, onDelete, onApply, onClose }) {
   const [start, setStart] = useState(p?.start_date || '')
   const [end, setEnd] = useState(p?.end_date || '')
   const [discount, setDiscount] = useState(p?.discount || '')
-  const [assignee, setAssignee] = useState(p?.assignee || '')
   const [memo, setMemo] = useState(p?.memo || '')
   const [link, setLink] = useState(p?.link || '')
   const [busy, setBusy] = useState(false)
@@ -559,7 +548,6 @@ function PromoModal({ modal, assignees, onSave, onDelete, onApply, onClose }) {
         start_date: start || null,
         end_date: end || null,
         discount: discount.trim() || null,
-        assignee: assignee.trim() || null,
         memo: memo.trim() || null,
         link: link.trim() || null,
       })
@@ -619,7 +607,7 @@ function PromoModal({ modal, assignees, onSave, onDelete, onApply, onClose }) {
                 [p.apply_approved_by, fmtDT(p.apply_approved_at)].filter(Boolean).join(' · ')}
               {p.apply_status === 'pending' &&
                 ([p.apply_requested_by, fmtDT(p.apply_requested_at)].filter(Boolean).join(' · ') ||
-                  `${p.assignee || '담당자'} 검토 중`)}
+                  '관리자 검토 중')}
               {p.apply_status === 'rejected' && (p.apply_note ? `사유: ${p.apply_note}` : '사유 없음')}
             </span>
           </div>
@@ -684,21 +672,11 @@ function PromoModal({ modal, assignees, onSave, onDelete, onApply, onClose }) {
             placeholder="예: 즉시 20% + 쿠폰 10%"
           />
         </div>
-        <div className="fld">
-          <label className="field-label">담당자</label>
-          <input
-            className="field-input"
-            list="promo-assignee"
-            value={assignee}
-            onChange={(e) => setAssignee(e.target.value)}
-            placeholder="이름"
-          />
-          <datalist id="promo-assignee">
-            {assignees.map((a) => (
-              <option key={a} value={a} />
-            ))}
-          </datalist>
-        </div>
+        {!isNew && p?.created_by && (
+          <p className="hint-sm" style={{ margin: '2px 0' }}>
+            등록: <b>{p.created_by}</b>
+          </p>
+        )}
         <div className="fld">
           <label className="field-label">메모</label>
           <textarea
@@ -980,10 +958,8 @@ function ApplyPriceModal({ promo, promos, products, listings, me, isAdmin, admin
   const [status, setStatus] = useState(promo.apply_status || 'draft')
   const [rejecting, setRejecting] = useState(false)
   const [rejectNote, setRejectNote] = useState('')
-  // 관리자는 본인 요청도 승인 가능. 담당자는 본인이 요청한 건 승인 불가.
-  const canApprove =
-    status === 'pending' &&
-    (isAdmin || (me && promo.assignee && me === promo.assignee && promo.apply_requested_by !== me))
+  // 승인은 관리자만
+  const canApprove = status === 'pending' && isAdmin
   const reviewMode = canApprove // 승인자에게는 편집 UI 대신 읽기 전용 요약만
 
   async function save(statusPatch, quiet) {
@@ -1036,11 +1012,8 @@ function ApplyPriceModal({ promo, promos, products, listings, me, isAdmin, admin
     if (sb) patch.status = sb
     if (await save(patch, true)) {
       setStatus('pending')
-      // 담당자가 지정돼 있으면 담당자에게, 없으면 관리자 전원에게 알림 (본인 제외)
-      const hasAssignee = promo.assignee && promo.assignee !== me
-      const targets = hasAssignee
-        ? [promo.assignee]
-        : [...new Set(adminNames)].filter((n) => n && n !== me)
+      // 승인 요청은 관리자 전원에게 알림 (본인 제외)
+      const targets = [...new Set(adminNames)].filter((n) => n && n !== me)
       if (targets.length) {
         targets.forEach((name) =>
           notify(name, {
@@ -1050,9 +1023,9 @@ function ApplyPriceModal({ promo, promos, products, listings, me, isAdmin, admin
             link: `/promos?apply=${promo.id}`,
           }),
         )
-        toast(`승인 요청했어요 — ${hasAssignee ? '담당자' : '관리자'}에게 알림을 보냈습니다`, 'ok')
+        toast('승인 요청했어요 — 관리자에게 알림을 보냈습니다', 'ok')
       } else {
-        toast('승인 요청했어요 (알림 받을 담당자·관리자가 없어요)', 'warn')
+        toast('승인 요청했어요 (알림 받을 관리자가 없어요)', 'warn')
       }
       onClose()
     }
@@ -1184,7 +1157,7 @@ function ApplyPriceModal({ promo, promos, products, listings, me, isAdmin, admin
                 {promo.apply_requested_at
                   ? ` · ${new Date(promo.apply_requested_at).toLocaleDateString('ko-KR')}`
                   : ''}
-                {canApprove ? ' · 검토 후 승인/반려하세요' : ` · ${promo.assignee || '담당자'} 승인 대기 중`}
+                {canApprove ? ' · 검토 후 승인/반려하세요' : ' · 관리자 승인 대기 중'}
               </span>
             </div>
           )}
