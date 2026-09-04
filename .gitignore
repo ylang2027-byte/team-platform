@@ -8,3 +8,6 @@ dist-ssr
 .DS_Store
 .vscode/*
 !.vscode/extensions.json
+
+# 민감 데이터 (개인정보) — 저장소에 올리지 않음
+supabase/data/

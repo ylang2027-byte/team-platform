@@ -3,7 +3,7 @@
 -- 선행 조건:
 --   1) refresh-prices Edge Function 배포 (Verify JWT 끄기)
 --   2) Edge Function Secrets 에 CRON_SECRET 추가
---      값: cron_KhthRxn_swE5CWdOewhRvHiM
+--      값: <YOUR_CRON_SECRET>
 -- 그 다음 이 SQL 을 SQL Editor 에서 Run (재실행해도 안전)
 -- ============================================================
 
@@ -27,7 +27,7 @@ select cron.schedule(
     url     := 'https://joixnxbrpfdkisokvxjk.supabase.co/functions/v1/refresh-prices',
     headers := jsonb_build_object(
       'Content-Type', 'application/json',
-      'x-cron-key',   'cron_KhthRxn_swE5CWdOewhRvHiM'
+      'x-cron-key',   '<YOUR_CRON_SECRET>'
     ),
     body    := '{}'::jsonb,
     timeout_milliseconds := 120000

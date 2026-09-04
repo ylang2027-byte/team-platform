@@ -28,7 +28,7 @@ select cron.schedule(
     url     := 'https://joixnxbrpfdkisokvxjk.supabase.co/functions/v1/refresh-prices',
     headers := jsonb_build_object(
       'Content-Type', 'application/json',
-      'x-cron-key',   'cron_KhthRxn_swE5CWdOewhRvHiM'
+      'x-cron-key',   '<YOUR_CRON_SECRET>'
     ),
     body    := '{}'::jsonb,
     timeout_milliseconds := 120000
