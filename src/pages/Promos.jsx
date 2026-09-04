@@ -984,6 +984,7 @@ function ApplyPriceModal({ promo, promos, products, listings, me, isAdmin, admin
   const canApprove =
     status === 'pending' &&
     (isAdmin || (me && promo.assignee && me === promo.assignee && promo.apply_requested_by !== me))
+  const reviewMode = canApprove // 승인자에게는 편집 UI 대신 읽기 전용 요약만
 
   async function save(statusPatch, quiet) {
     setBusy(true)
@@ -1131,9 +1132,11 @@ function ApplyPriceModal({ promo, promos, products, listings, me, isAdmin, admin
           </>
         ) : (
         <>
-          <Button variant="ghost" size="sm" className="btn-outline" onClick={autoFill}>
-            최저가 맞춰 자동
-          </Button>
+          {!reviewMode && (
+            <Button variant="ghost" size="sm" className="btn-outline" onClick={autoFill}>
+              최저가 맞춰 자동
+            </Button>
+          )}
           <span className="spacer" />
           {canApprove ? (
             <>
@@ -1238,6 +1241,17 @@ function ApplyPriceModal({ promo, promos, products, listings, me, isAdmin, admin
             </dl>
           )}
 
+          {reviewMode ? (
+            <ReviewSummary
+              products={products}
+              rows={rows}
+              coupons={coupons}
+              reqD={reqD}
+              byId={byId}
+              lbp={lbp}
+            />
+          ) : (
+          <>
           <div className="fld" style={{ maxWidth: 180, marginBottom: 12 }}>
             <label className="field-label">요구 즉시할인율 (%)</label>
             <input
@@ -1341,9 +1355,92 @@ function ApplyPriceModal({ promo, promos, products, listings, me, isAdmin, admin
           <p className="hint-sm" style={{ marginTop: 12 }}>
             선택 {included}개 · 🔴 고객 최종가 &lt; 최저가 · 🟠 즉시할인율이 요구치보다 낮음
           </p>
+          </>
+          )}
         </>
       )}
       {err && <p className="field-error">{err}</p>}
     </Modal>
+  )
+}
+
+function ReviewSummary({ products, rows, coupons, reqD, byId, lbp }) {
+  const items = products
+    .filter((p) => rows[p.id]?.included && rows[p.id].apply)
+    .map((p) => {
+      const { list, floor } = resolvePrices(p, byId, lbp)
+      const apply = toInt(rows[p.id].apply)
+      const discRate = list && apply ? Math.round((1 - apply / list) * 100) : null
+      const res = apply != null ? computeFinal(apply, coupons) : null
+      const customer = res ? res.customer : null
+      const below = floor != null && customer != null && customer < floor
+      return { p, list, apply, discRate, customer, used: res?.used || [], below }
+    })
+  const anyBelow = items.some((i) => i.below)
+  return (
+    <div className="review">
+      {reqD != null && (
+        <p className="review-req">
+          요구 즉시할인율 <b>{reqD}%</b>
+        </p>
+      )}
+      {coupons.length > 0 && (
+        <div className="review-cpns">
+          <p className="review-h">적용 쿠폰</p>
+          {coupons.map((c, i) => (
+            <div className="review-cpn" key={i}>
+              <span className="rc-name">{c.name || '(이름 없음)'}</span>
+              <span className="rc-meta">
+                {c.grp === 'base' ? '기본' : '중복'} ·{' '}
+                {c.kind === 'percent' ? `${c.value}%` : `${nf2.format(c.value)}원`}
+                {c.max_discount ? ` · 한도 ${nf2.format(c.max_discount)}` : ''}
+                {c.min_order ? ` · 최소 ${nf2.format(c.min_order)}` : ''}
+                {c.our_share ? ` · 분담 ${c.our_share}%` : ''}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+      {items.length === 0 ? (
+        <p className="chart-empty">신청 대상 제품이 없어요.</p>
+      ) : (
+        <div className="review-table">
+          <div className="review-row review-head">
+            <span>제품</span>
+            <span className="num">정상가</span>
+            <span className="num">신청가</span>
+            <span className="num">즉시할인</span>
+            <span className="num">고객 최종가</span>
+            <span>판정</span>
+          </div>
+          {items.map(({ p, list, apply, discRate, customer, used, below }) => (
+            <div className="review-row" key={p.id}>
+              <span data-label="제품">
+                {p.name}
+                {used.length > 0 && <em className="rr-cpn">쿠폰: {used.join(' + ')}</em>}
+              </span>
+              <span className="num" data-label="정상가">{list != null ? nf2.format(list) : '—'}</span>
+              <span className="num rr-apply" data-label="신청가">
+                {apply != null ? nf2.format(apply) : '—'}
+              </span>
+              <span className="num" data-label="즉시할인">{discRate != null ? `${discRate}%` : '—'}</span>
+              <span
+                className={'num' + (below ? ' ap-bad' : '')}
+                data-label="고객 최종가"
+              >
+                {customer != null ? nf2.format(customer) : '—'}
+              </span>
+              <span data-label="판정">
+                {below ? <em className="bad">최저가 미달</em> : <em className="ok">OK</em>}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+      <p className="hint-sm" style={{ marginTop: 10 }}>
+        위 신청가로 기획전을 신청합니다.
+        {anyBelow ? ' 🔴 최저가 미달 항목이 있어요.' : ''} 문제 있으면 <b>반려</b> 후 사유를 남겨주세요.
+      </p>
+    </div>
   )
 }
