@@ -270,6 +270,7 @@ export default function Promos() {
   const [applyModal, setApplyModal] = useState(null)
   const [statFilter, setStatFilter] = useState(null) // null | open | applied | running | pending
   const [adminNames, setAdminNames] = useState([])
+  const [teamNames, setTeamNames] = useState([])
   const [params, setParams] = useSearchParams()
 
   const load = useCallback(async () => {
@@ -284,6 +285,7 @@ export default function Promos() {
       setProducts(prods)
       setListings(ls)
       setAdminNames(profs.filter((p) => p.role === 'admin' && p.name).map((p) => p.name))
+      setTeamNames(profs.filter((p) => p.name).map((p) => p.name))
       setError('')
     } catch (e) {
       setError(readErr(e))
@@ -308,8 +310,11 @@ export default function Promos() {
   }, [promos])
 
   const assignees = useMemo(
-    () => [...new Set(promos.map((p) => p.assignee).filter(Boolean))].sort(),
-    [promos],
+    () =>
+      [
+        ...new Set([...teamNames, ...promos.map((p) => p.assignee).filter(Boolean)]),
+      ].sort(),
+    [promos, teamNames],
   )
 
   const isOpen = (p) => OPEN_STATUS.has(p.status) || p.status === 'running'
